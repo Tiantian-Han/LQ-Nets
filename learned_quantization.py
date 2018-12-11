@@ -28,11 +28,13 @@ def QuantizedActiv(x, nbit=2):
         About multi-GPU training: moving averages across GPUs are not aggregated.
         Batch statistics are computed by main training tower. This is consistent with most frameworks.
     """
-    init_basis = [(NORM_PPF_0_75 * 2 / (2 ** nbit - 1)) * (2. ** i) for i in range(nbit)]
+    init_basis = [(NORM_PPF_0_75 * 2 / (2 ** nbit - 1)) * (2. ** i) for i in range(nbit)]#初始化基向量
     init_basis = tf.constant_initializer(init_basis)
     bit_dims = [nbit, 1]
-    num_levels = 2 ** nbit
+    num_levels = 2 ** nbit#量化级别数
     # initialize level multiplier
+    
+    #该过程为初始化一个量化级别码，是一个2**nbit个元素的列表，其中每个元素都是一个nbit位的 {0,1}码，具体是0或者1是由级别数除以2的余数决定的
     init_level_multiplier = []
     for i in range(0, num_levels):
         level_multiplier_i = [0. for j in range(nbit)]
@@ -41,6 +43,8 @@ def QuantizedActiv(x, nbit=2):
             level_multiplier_i[j] = float(level_number % 2)
             level_number = level_number // 2
         init_level_multiplier.append(level_multiplier_i)
+    #该过程初始化一个 threshold multiplier，共有2**nbit-1 个元素，其中每个元素都是一个具有2** nbit个元素的列表，列表中的值为初始值
+    #例如：[[0.5,0,5,0,0,...,0,0], [0,0.5,0.5,0,0,...,0], ... , [0,0,0,...,0,0,0.5,0.5]]
     # initialize threshold multiplier
     init_thrs_multiplier = []
     for i in range(1, num_levels):
@@ -58,16 +62,16 @@ def QuantizedActiv(x, nbit=2):
         ctx = get_current_tower_context()  # current tower context
         # calculate levels and sort
         level_codes = tf.constant(init_level_multiplier)
-        levels = tf.matmul(level_codes, basis)
+        levels = tf.matmul(level_codes, basis)#V*B表示每个量化级别所对应的量化值
         levels, sort_id = tf.nn.top_k(tf.transpose(levels, [1, 0]), num_levels)
         levels = tf.reverse(levels, [-1])
         sort_id = tf.reverse(sort_id, [-1])
-        levels = tf.transpose(levels, [1, 0])
+        levels = tf.transpose(levels, [1, 0])#V*B表示每个量化级别所对应的量化值
         sort_id = tf.transpose(sort_id, [1, 0])
         # calculate threshold
         thrs_multiplier = tf.constant(init_thrs_multiplier)
-        thrs = tf.matmul(thrs_multiplier, levels)
-        # calculate output y and its binary code
+        thrs = tf.matmul(thrs_multiplier, levels)#表示threshold
+        # calculate output y and its binary code，给量化后的输出分配空间，包括量化值和量化码
         y = tf.zeros_like(x)  # output
         reshape_x = tf.reshape(x, [-1])
         zero_dims = tf.stack([tf.shape(reshape_x)[0], nbit])
@@ -76,8 +80,8 @@ def QuantizedActiv(x, nbit=2):
         zero_bits_y = tf.fill(zero_dims, 0.)
         for i in range(num_levels - 1):
             g = tf.greater(x, thrs[i])
-            y = tf.where(g, zero_y + levels[i + 1], y)
-            bits_y = tf.where(tf.reshape(g, [-1]), zero_bits_y + level_codes[sort_id[i + 1][0]], bits_y)
+            y = tf.where(g, zero_y + levels[i + 1], y)#大于该级别threshold的值的量化值就等于该级别所对应的量化值
+            bits_y = tf.where(tf.reshape(g, [-1]), zero_bits_y + level_codes[sort_id[i + 1][0]], bits_y)#该级别所对应的量化码
         # training
         if ctx.is_main_training_tower:
             BT = tf.matrix_transpose(bits_y)
