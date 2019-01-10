@@ -34,7 +34,7 @@ def QuantizedActiv(x, nbit=2):
     num_levels = 2 ** nbit#量化级别数
     # initialize level multiplier
     
-    #该过程为初始化一个量化级别码，是一个2**nbit个元素的列表，其中每个元素都是一个nbit位的 {0,1}码，具体是0或者1是由级别数除以2的余数决定的
+    #该过程为初始化一个量化级别码，是一个2**nbit个元素的列表，其中每个元素都是一个nbit位的 {0,1}码，例如，对于7,那么对应的编码为：{0,1,2,3: 1,1,1,0}
     init_level_multiplier = []
     for i in range(0, num_levels):
         level_multiplier_i = [0. for j in range(nbit)]
