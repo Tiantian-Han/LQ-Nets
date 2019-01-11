@@ -51,8 +51,8 @@ def QuantizedActiv(x, nbit=2):
         thrs_multiplier_i = [0. for j in range(num_levels)]
         thrs_multiplier_i[i - 1] = 0.5
         thrs_multiplier_i[i] = 0.5
-        init_thrs_multiplier.append(thrs_multiplier_i)
-
+        iniinit_thrs_multipliert_thrs_multiplier.append(thrs_multiplier_i)
+    # init_thrs_multiplier_shape:15_16
     with tf.variable_scope('ActivationQuantization'):
         basis = tf.get_variable(
             'basis', bit_dims, tf.float32,
@@ -62,29 +62,29 @@ def QuantizedActiv(x, nbit=2):
         ctx = get_current_tower_context()  # current tower context
         # calculate levels and sort
         level_codes = tf.constant(init_level_multiplier)
-        levels = tf.matmul(level_codes, basis)#V*B表示每个量化级别所对应的量化值
-        levels, sort_id = tf.nn.top_k(tf.transpose(levels, [1, 0]), num_levels)
-        levels = tf.reverse(levels, [-1])
-        sort_id = tf.reverse(sort_id, [-1])
-        levels = tf.transpose(levels, [1, 0])#V*B表示每个量化级别所对应的量化值
+        levels = tf.matmul(level_codes, basis)#V*B表示每个量化级别所对应的量化值，例如0, v1, v2, v1+v2, v3, v3+v1
+        levels, sort_id = tf.nn.top_k(tf.transpose(levels, [1, 0]), num_levels)#从大到小排序
+        levels = tf.reverse(levels, [-1])#从小到大
+        sort_id = tf.reverse(sort_id, [-1])#对应的索引从小到大
+        levels = tf.transpose(levels, [1, 0])#V*B表示每个量化级别所对应的量化值，以4bit为例，levels_shape:16*1
         sort_id = tf.transpose(sort_id, [1, 0])
         # calculate threshold
-        thrs_multiplier = tf.constant(init_thrs_multiplier)
-        thrs = tf.matmul(thrs_multiplier, levels)#表示threshold
-        # calculate output y and its binary code，给量化后的输出分配空间，包括量化值和量化码
+        thrs_multiplier = tf.constant(init_thrs_multiplier)#shape:15_16
+        thrs = tf.matmul(thrs_multiplier, levels)#表示每个量化级别所对应的量化范围，论文中的(q(l-1)+q(l))/2, shape:15_16*16_1=15_1
+        # calculate output y and its binary code，给量化后的输出分配空间，包括量化值和量化码，假设x_shape:1_5_2_2
         y = tf.zeros_like(x)  # output
-        reshape_x = tf.reshape(x, [-1])
-        zero_dims = tf.stack([tf.shape(reshape_x)[0], nbit])
+        reshape_x = tf.reshape(x, [-1])#shape:1*5*2*2=20
+        zero_dims = tf.stack([tf.shape(reshape_x)[0], nbit])#shape:20_4
         bits_y = tf.fill(zero_dims, 0.)
         zero_y = tf.zeros_like(x)
         zero_bits_y = tf.fill(zero_dims, 0.)
         for i in range(num_levels - 1):
-            g = tf.greater(x, thrs[i])
-            y = tf.where(g, zero_y + levels[i + 1], y)#大于该级别threshold的值的量化值就等于该级别所对应的量化值
+            g = tf.greater(x, thrs[i])#判断
+            y = tf.where(g, zero_y + levels[i + 1], y)#大于该级别threshold的值的, 量化值就等于该级别所对应的量化值
             bits_y = tf.where(tf.reshape(g, [-1]), zero_bits_y + level_codes[sort_id[i + 1][0]], bits_y)#该级别所对应的量化码
         # training
         if ctx.is_main_training_tower:
-            BT = tf.matrix_transpose(bits_y)
+            BT = tf.matrix_transpose(bits_y)#shape:4_20
             # calculate BTxB
             BTxB = []
             for i in range(nbit):
